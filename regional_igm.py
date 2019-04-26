@@ -18,6 +18,9 @@ def GenerateConfig(context):
   dse_subnet = deployment + '-dse-subnet-' + region
   network = URL_BASE + context.env['project'] + '/global/networks/' + context.properties['network']
   cidr = context.properties['subnetCIDR']
+  int_ip_octet = cidr.split(".")
+  dse_seed_0_ip_addr = int_ip_octet[0] + "."  + int_ip_octet[1] + "." + int_ip_octet[2] + ".2"
+  dse_seed_1_ip_addr = int_ip_octet[0] + "."  + int_ip_octet[1] + "." + int_ip_octet[2] + ".3"
 
   # Create a dictionary which represents the resources
   # (Intstance Template, IGM, etc.)
@@ -134,6 +137,14 @@ def GenerateConfig(context):
         {
             'name': 'IG region',
             'value': '$(ref.' + dse_seed_0_igm + '.region)'
+        },
+        {
+            'name': 'dse_seed_0_ip_addr',
+            'value': dse_seed_0_ip_addr
+	},
+        {
+            'name': 'dse_seed_1_ip_addr',
+            'value': dse_seed_1_ip_addr
         }
   ]
   config['outputs'] = outputs
