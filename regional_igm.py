@@ -1,35 +1,8 @@
-# Copyright 2017 Google Inc. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-
-# limitations under the License.
-"""Creates an autoscaled managed instance group."""
-# This consists of multiple resources:
-# - Instance Template to define the properties for each VM
-#      The image and machine size are hardcoded. They could be parameterized
-# - Instance Group Manager
-# - Autoscaler to grow and shrink the size of the the Instance Group
-# - Load Balancer to distribute traffice to the VMs.
+# Copyright 2019 DataStax, Inc. All rights reserved.
 
 import yaml
 
 URL_BASE = 'https://www.googleapis.com/compute/v1/projects/'
-
-# Every Python Template needs to have the GenerateConfig() or generate_config()
-# method
-# This method is called by DM in expansion and must return either:
-#    - the yaml format required by DM
-#    - a python dictionary representing the yaml (this is more efficient)
-
 
 def GenerateConfig(context):
   """Generates the configuration."""
@@ -37,14 +10,14 @@ def GenerateConfig(context):
   config = {'resources': []}
 
   deployment = context.env['deployment']
-  dse_it = deployment + 'dse-it'
-  dse_seed_0_igm = deployment + 'dse-seed-0-igm'
-  dse_seed_1_igm = deployment + 'dse-seed-1-igm'
-  dse_non_seed_pool_igm = deployment + 'dse-non-seed-pool-igm'
+  dse_it = deployment + '-dse-it'
+  dse_seed_0_igm = deployment + '-dse-seed-0-igm'
+  dse_seed_1_igm = deployment + '-dse-seed-1-igm'
+  dse_non_seed_pool_igm = deployment + '-dse-non-seed-pool-igm'
   region = context.properties['region']
   dse_subnet = deployment + '-dse-subnet-' + region
-  network = URL_BASE + context.env['project'] + '/global/networks/default'
-  cidr = '10.8.0.0/16'
+  network = URL_BASE + context.env['project'] + '/global/networks/' + context.properties['network']
+  cidr = context.properties['subnetCIDR']
 
   # Create a dictionary which represents the resources
   # (Intstance Template, IGM, etc.)
@@ -113,7 +86,7 @@ def GenerateConfig(context):
           'type': 'compute.v1.regionInstanceGroupManager',
           'properties': {
               'region': region,
-              'baseInstanceName': deployment + '-instance',
+              'baseInstanceName': deployment + '-dse',
               'instanceTemplate': '$(ref.%s.selfLink)' % dse_it,
               'targetSize': 1
           }
