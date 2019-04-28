@@ -178,7 +178,7 @@ def GenerateConfig(context):
                       'autoDelete': True, 
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180424', 
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824', 
                           'diskType': context.properties['dataDiskType'],
                           'diskSizeGb': context.properties['diskSize']
                       }
@@ -233,7 +233,7 @@ def GenerateConfig(context):
                       'autoDelete': True,
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180424',
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824',
                           'diskType': context.properties['dataDiskType'],
                           'diskSizeGb': context.properties['diskSize']
                       }
@@ -288,7 +288,7 @@ def GenerateConfig(context):
                       'autoDelete': True,
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180424',
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824',
                           'diskType': context.properties['dataDiskType'],
                           'diskSizeGb': context.properties['diskSize']
                       }
@@ -343,7 +343,7 @@ def GenerateConfig(context):
                       'autoDelete': True, 
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180424',
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824',
                           'diskType': context.properties['dataDiskType'],
                           'diskSizeGb': context.properties['diskSize']
                       }
