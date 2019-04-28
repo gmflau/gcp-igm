@@ -12,8 +12,10 @@ def GenerateConfig(context):
   config = {'resources': []}
 
   release = 'master'
+  ddac_tarball = 'ddac-5.1.12-bin.tar.gz'
   ddac_gcp_mp_bucket = 'ddac-gcp-marketplace'
-  ddac_repo_dir = 'ddac-gcp-install-' + release
+  ddac_repo = 'ddac-gcp-install'
+  ddac_repo_dir = ddac_repo + '-' + release
   ddac_install_pkg = ddac_repo_dir + '.tar.gz'
   ddac_install_pkg_uri = ddac_gcp_mp_bucket + '/' + ddac_install_pkg
 
@@ -51,7 +53,10 @@ def GenerateConfig(context):
       ddac_install_pkg=''' + ddac_install_pkg + '''
       tar -xvf $ddac_install_pkg
       ddac_repo_dir=''' +  ddac_repo_dir + '''
-      mv $ddac_repo_dir/ddac-5.1.12-bin.tar.gz .
+      ddac_repo=''' + ddac_repo + '''
+      mv $ddac_repo_dir $ddac_repo
+      ddac_tarball=''' +  ddac_tarball + '''
+      mv $ddac_repo/$ddac_tarball .
       
       sleep 180
       deployment_bucket=''' + deployment_bucket + '''
