@@ -12,6 +12,7 @@ def GenerateConfig(context):
   config = {'resources': []}
 
   deployment = context.env['deployment']
+  cluster_size = context.properties['clusterSize']
   dse_seed_0_it = deployment + '-dse-seed-0-it'
   dse_seed_1_it = deployment + '-dse-seed-1-it'
   dse_non_seed_it = deployment + '-dse-non-seed-it'
@@ -64,8 +65,17 @@ def GenerateConfig(context):
       echo seed_1 > seed_1
       gsutil cp ./seed_1 gs://$deployment_bucket/
 
+      # Wait until all DSE nodes are up and have joined the cluster:
+      #cluster_size=''' + cluster_size + '''
+      #size=`nodetool status | grep -o 'UN' | wc -l`
+      #while [ $size -lt $cluster_size ]; do
+      #    echo The Current DSE cluster size is $size
+      #    echo Keep looping until the DSE cluster size reaches $cluster_size
+      #    sleep 10s
+      #    size=`nodetool status | grep -o 'UN' | wc -l`
+      #done
+
       # To Do:
-      # Check using nodetool status to ensure all DSE nodes are up and joined the DSE cluster
       # Once all up and joined the cluster, do the following:
       # echo dev_ops > dev_ops
       # gsutil cp ./dev_ops gs://$deployment_bucket/
@@ -400,7 +410,7 @@ def GenerateConfig(context):
               'region': region,
               'baseInstanceName': deployment + '-instance',
               'instanceTemplate': '$(ref.%s.selfLink)' % dse_non_seed_it,
-              'targetSize': 3
+              'targetSize': int(cluster_size) - 2 
           },
           'metadata': {
               'dependsOn': [
