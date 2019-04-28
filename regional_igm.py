@@ -15,9 +15,11 @@ def GenerateConfig(context):
   dse_seed_0_it = deployment + '-dse-seed-0-it'
   dse_seed_1_it = deployment + '-dse-seed-1-it'
   dse_non_seed_it = deployment + '-dse-non-seed-it'
+  dev_ops_it = deployment + '-dev-ops-it'
   dse_seed_0_igm = deployment + '-dse-seed-0-igm'
   dse_seed_1_igm = deployment + '-dse-seed-1-igm'
   dse_non_seed_pool_igm = deployment + '-dse-non-seed-pool-igm'
+  dev_ops_igm = deployment + '-dev-ops-igm'
   region = context.properties['region']
   dse_subnet = deployment + '-dse-subnet-' + region
   network = URL_BASE + context.env['project'] + '/global/networks/' + context.properties['network']
@@ -33,6 +35,8 @@ def GenerateConfig(context):
   # DSE seed node startup script
   dse_seed_0_script = '''
       #!/usr/bin/env bash
+
+      # Install and configure the dse seed 0
 
       sleep 180
       pushd ~ubuntu
@@ -54,9 +58,18 @@ def GenerateConfig(context):
           gsutil cp gs://$deployment_bucket/seed_0 . 
       done
 
+      # Install and configure the dse seed 1
+
       sleep 180
       echo seed_1 > seed_1
       gsutil cp ./seed_1 gs://$deployment_bucket/
+
+      # To Do:
+      # Check using nodetool status to ensure all DSE nodes are up and joined the DSE cluster
+      # Once all up and joined the cluster, do the following:
+      # echo dev_ops > dev_ops
+      # gsutil cp ./dev_ops gs://$deployment_bucket/
+
       popd
        
       '''
@@ -72,10 +85,39 @@ def GenerateConfig(context):
           sleep 10s
           gsutil cp gs://$deployment_bucket/seed_1 .        
       done
+
+
+      # Install and conifgure non-seed node
+
+
+      file=`date +'%Y-%m-%d-%HH%MM%SS'`
+      echo time > $file
+      gsutil cp $file gs://$deployment_bucket/      
       popd
 
       '''
 
+  dev_ops_script = '''
+      #!/usr/bin/env bash
+
+      pushd ~ubuntu
+      deployment_bucket=''' + deployment_bucket + '''
+
+      #gsutil cp gs://$deployment_bucket/dev_ops .
+      #while [ $? -ne 0 ]
+      #do
+      #    sleep 10s
+      #    gsutil cp gs://$deployment_bucket/dev_ops .
+      #done
+
+      # install and configure the dev ops vm below
+
+      gsutil rm gs://$deployment_bucket/*
+
+      popd
+
+      '''
+ 
   # Create a dictionary which represents the resources
   # (Intstance Template, IGM, etc.)
   resources = [
@@ -268,6 +310,61 @@ def GenerateConfig(context):
               }
           }
       },
+      {   
+          # Create the Instance Template
+          'name': dev_ops_it,
+          'type': 'compute.v1.instanceTemplate',
+          'properties': {
+              'properties': {
+                  'machineType':
+                      context.properties['machineType'],
+                  'networkInterfaces': [{
+                      'network': network,
+                      'subnetwork': '$(ref.%s.selfLink)' % dse_subnet,
+                      'accessConfigs': [{
+                          'name': 'External NAT',
+                          'type': 'ONE_TO_ONE_NAT'
+                      }]
+                  }],
+                  'disks': [{
+                      'deviceName': 'boot-disk',
+                      'type': 'PERSISTENT',
+                      'boot': True, 
+                      'autoDelete': True, 
+                      'initializeParams': {
+                          'sourceImage':
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180424',
+                          'diskType': context.properties['dataDiskType'],
+                          'diskSizeGb': context.properties['diskSize']
+                      }
+                    },
+                    { 
+                      'deviceName': 'vm-data-disk',
+                      'type': 'PERSISTENT',
+                      'boot': False,
+                      'autoDelete': True, 
+                      'initializeParams': {
+                          'diskType': 'pd-standard',
+                          'diskSizeGb':'20'
+                      }
+                    }
+                  ],
+                  'serviceAccounts': [{
+                     'email': 'default',
+                     'scopes': ['https://www.googleapis.com/auth/compute', 'https://www.googleapis.com/auth/cloudruntimeconfig', 'https://www.googleapis.com/auth/devstorage.full_control']
+                  }],
+                  'metadata': {
+                      'dependsOn': [
+                          dse_subnet,
+                      ],
+                      'items': [ {
+                          'key': 'startup-script',
+                          'value': dev_ops_script
+                      }]
+                  }
+              }
+          }
+      },
       {
           # Instance Group Manager
           'name': dse_seed_0_igm,
@@ -308,6 +405,22 @@ def GenerateConfig(context):
           'metadata': {
               'dependsOn': [
                    dse_seed_1_igm,
+              ]
+          }
+      },
+      {
+          # Instance Group Manager
+          'name': dev_ops_igm,
+          'type': 'compute.v1.regionInstanceGroupManager',
+          'properties': {
+              'region': region,
+              'baseInstanceName': deployment + '-instance',
+              'instanceTemplate': '$(ref.%s.selfLink)' % dev_ops_it,
+              'targetSize': 1
+          },
+          'metadata': {
+              'dependsOn': [
+                   dse_non_seed_pool_igm,
               ]
           }
       }
