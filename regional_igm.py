@@ -11,8 +11,14 @@ def GenerateConfig(context):
 
   config = {'resources': []}
 
+  release = 'master'
+  ddac_gcp_mp_bucket = 'ddac-gcp-marketplace'
+  ddac_repo_dir = 'ddac-gcp-install-' + release
+  ddac_install_pkg = ddac_repo_dir + '.tar.gz'
+  ddac_install_pkg_uri = ddac_gcp_mp_bucket + '/' + ddac_install_pkg
+
   deployment = context.env['deployment']
-  cluster_size = context.properties['clusterSize']
+  cluster_size = str(context.properties['clusterSize'])
   dse_seed_0_it = deployment + '-dse-seed-0-it'
   dse_seed_1_it = deployment + '-dse-seed-1-it'
   dse_non_seed_it = deployment + '-dse-non-seed-it'
@@ -37,10 +43,17 @@ def GenerateConfig(context):
   dse_seed_0_script = '''
       #!/usr/bin/env bash
 
-      # Install and configure the dse seed 0
-
-      sleep 180
       pushd ~ubuntu
+
+      # Install and configure the dse seed 0
+      ddac_install_pkg_uri=''' + ddac_install_pkg_uri + '''
+      gsutil cp gs://$ddac_install_pkg_uri .
+      ddac_install_pkg=''' + ddac_install_pkg + '''
+      tar -xvf $ddac_install_pkg
+      ddac_repo_dir=''' +  ddac_repo_dir + '''
+      mv $ddac_repo_dir/ddac-5.1.12-bin.tar.gz .
+      
+      sleep 180
       deployment_bucket=''' + deployment_bucket + '''
       echo seed_0 > seed_0
       gsutil cp ./seed_0 gs://$deployment_bucket/
@@ -410,7 +423,7 @@ def GenerateConfig(context):
               'region': region,
               'baseInstanceName': deployment + '-instance',
               'instanceTemplate': '$(ref.%s.selfLink)' % dse_non_seed_it,
-              'targetSize': int(cluster_size) - 2 
+              'targetSize': context.properties['clusterSize'] - 2
           },
           'metadata': {
               'dependsOn': [
