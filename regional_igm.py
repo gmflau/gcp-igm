@@ -11,33 +11,55 @@ def GenerateConfig(context):
 
   config = {'resources': []}
 
+  # Release tag for ddac-gcp-install tarball in a GCP bucket
   release = 'master'
+  # DDAC release tarball
   ddac_tarball = 'ddac-5.1.12-bin.tar.gz'
+  # DDAC GCP marketplace bucket
   ddac_gcp_mp_bucket = 'ddac-gcp-marketplace'
+  # ddac-gcp-install bucket item name
   ddac_repo = 'ddac-gcp-install'
+  # ddac-gcp-install release
   ddac_repo_dir = ddac_repo + '-' + release
   ddac_install_pkg = ddac_repo_dir + '.tar.gz'
   ddac_install_pkg_uri = ddac_gcp_mp_bucket + '/' + ddac_install_pkg
 
   deployment = context.env['deployment']
   cluster_size = str(context.properties['clusterSize'])
+  # GCP Instance Templates
   dse_seed_0_it = deployment + '-dse-seed-0-it'
   dse_seed_1_it = deployment + '-dse-seed-1-it'
   dse_non_seed_it = deployment + '-dse-non-seed-it'
   dev_ops_it = deployment + '-dev-ops-it'
+  # GCP Instance Group Manager
   dse_seed_0_igm = deployment + '-dse-seed-0-igm'
   dse_seed_1_igm = deployment + '-dse-seed-1-igm'
   dse_non_seed_pool_igm = deployment + '-dse-non-seed-pool-igm'
   dev_ops_igm = deployment + '-dev-ops-igm'
+
+  # GCP subnet
   region = context.properties['region']
+  cidr = context.properties['subnetCIDR']
   dse_subnet = deployment + '-dse-subnet-' + region
   network = URL_BASE + context.env['project'] + '/global/networks/' + context.properties['network']
-  cidr = context.properties['subnetCIDR']
-  int_ip_octet = cidr.split(".")
-  dse_seed_0_ip_addr = int_ip_octet[0] + "."  + int_ip_octet[1] + "." + int_ip_octet[2] + ".2"
-  dse_seed_1_ip_addr = int_ip_octet[0] + "."  + int_ip_octet[1] + "." + int_ip_octet[2] + ".3"
+  
+  # DDAC firewall
+  ddac_fw = deployment + '-ddac-fw'  
 
-  # Generate a random bucket name
+  # DSE seed 0 and seed 1 IP addresses based on user provided CIDR
+  # In GCP, auto IP address assignment for first and second IP addresses are .2 and .3
+  int_ip_octet = cidr.split(".")
+  int_ip_prefix = int_ip_octet[0] + "."  + int_ip_octet[1] + "." + int_ip_octet[2] 
+  dse_seed_0_ip_addr = int_ip_prefix + ".2"
+  dse_seed_1_ip_addr = int_ip_prefix + ".3"
+  seeds = dse_seed_0_ip_addr + ',' + dse_seed_1_ip_addr
+
+  # DSE cluster info
+  cluster_name = context.properties['clusterName']
+  cluster_size = str(context.properties['clusterSize'])
+  dc_name = context.properties['dcName']
+
+  # Generate a random bucket name for each deployment
   bucket_suffix = ''.join([random.choice(string.ascii_lowercase + string.digits) for n in xrange(10)])
   deployment_bucket = context.env['deployment'] + '-deployment-bucket-' + bucket_suffix
 
@@ -45,20 +67,36 @@ def GenerateConfig(context):
   dse_seed_0_script = '''
       #!/usr/bin/env bash
 
-      pushd ~ubuntu
+      # Install Java
+      echo "Performing package OpenJDK install"
+      # check for lock
+      echo -e "Checking if apt/dpkg running, start: $(date +%r)"
+      while ps -A | grep -e apt -e dpkg >/dev/null 2>&1; do sleep 10s; done;
+      echo -e "No other procs: $(date +%r)"
+      apt-get -y update
+      apt-get -y install openjdk-8-jdk
 
+      pushd ~ubuntu
       # Install and configure the dse seed 0
+      # Download ddac-gcp-install module
       ddac_install_pkg_uri=''' + ddac_install_pkg_uri + '''
       gsutil cp gs://$ddac_install_pkg_uri .
       ddac_install_pkg=''' + ddac_install_pkg + '''
       tar -xvf $ddac_install_pkg
       ddac_repo_dir=''' +  ddac_repo_dir + '''
       ddac_repo=''' + ddac_repo + '''
+      # Standardize repo name: ddac-gcp-install
       mv $ddac_repo_dir $ddac_repo
       ddac_tarball=''' +  ddac_tarball + '''
       mv $ddac_repo/$ddac_tarball .
-      
-      sleep 180
+
+      # Deploy DDAC
+      cluster_name=''' + cluster_name + '''
+      dc_name=''' + dc_name + '''
+      seeds=''' + seeds + '''
+      ./$ddac_repo/deploy-dse.sh $cluster_name $dc_name $seeds
+
+      # Send flag to start seed 1 install 
       deployment_bucket=''' + deployment_bucket + '''
       echo seed_0 > seed_0
       gsutil cp ./seed_0 gs://$deployment_bucket/
@@ -67,6 +105,15 @@ def GenerateConfig(context):
       '''
 
   dse_seed_1_script = '''
+
+      # Install Java
+      echo "Performing package OpenJDK install"
+      # check for lock
+      echo -e "Checking if apt/dpkg running, start: $(date +%r)"
+      while ps -A | grep -e apt -e dpkg >/dev/null 2>&1; do sleep 10s; done;
+      echo -e "No other procs: $(date +%r)"
+      apt-get -y update
+      apt-get -y install openjdk-8-jdk
 
       pushd ~ubuntu
       deployment_bucket=''' + deployment_bucket + '''
@@ -78,8 +125,25 @@ def GenerateConfig(context):
       done
 
       # Install and configure the dse seed 1
+      # Download ddac-gcp-install module
+      ddac_install_pkg_uri=''' + ddac_install_pkg_uri + '''
+      gsutil cp gs://$ddac_install_pkg_uri .
+      ddac_install_pkg=''' + ddac_install_pkg + '''
+      tar -xvf $ddac_install_pkg
+      ddac_repo_dir=''' +  ddac_repo_dir + '''
+      ddac_repo=''' + ddac_repo + '''
+      # Standardize repo name: ddac-gcp-install
+      mv $ddac_repo_dir $ddac_repo
+      ddac_tarball=''' +  ddac_tarball + '''
+      mv $ddac_repo/$ddac_tarball .
 
-      sleep 180
+      # Deploy DDAC
+      cluster_name=''' + cluster_name + '''
+      dc_name=''' + dc_name + '''
+      seeds=''' + seeds + '''
+      ./$ddac_repo/deploy-dse.sh $cluster_name $dc_name $seeds
+
+      # Send flag to start non-seed nodes install
       echo seed_1 > seed_1
       gsutil cp ./seed_1 gs://$deployment_bucket/
 
@@ -105,6 +169,15 @@ def GenerateConfig(context):
   dse_non_seed_script = '''
       #!/usr/bin/env bash
 
+      # Install Java
+      echo "Performing package OpenJDK install"
+      # check for lock
+      echo -e "Checking if apt/dpkg running, start: $(date +%r)"
+      while ps -A | grep -e apt -e dpkg >/dev/null 2>&1; do sleep 10s; done;
+      echo -e "No other procs: $(date +%r)"
+      apt-get -y update
+      apt-get -y install openjdk-8-jdk
+
       pushd ~ubuntu
       deployment_bucket=''' + deployment_bucket + '''
       gsutil cp gs://$deployment_bucket/seed_1 .
@@ -114,19 +187,43 @@ def GenerateConfig(context):
           gsutil cp gs://$deployment_bucket/seed_1 .        
       done
 
-
       # Install and conifgure non-seed node
+      # Download ddac-gcp-install module
+      ddac_install_pkg_uri=''' + ddac_install_pkg_uri + '''
+      gsutil cp gs://$ddac_install_pkg_uri .
+      ddac_install_pkg=''' + ddac_install_pkg + '''
+      tar -xvf $ddac_install_pkg
+      ddac_repo_dir=''' +  ddac_repo_dir + '''
+      ddac_repo=''' + ddac_repo + '''
+      # Standardize repo name: ddac-gcp-install
+      mv $ddac_repo_dir $ddac_repo
+      ddac_tarball=''' +  ddac_tarball + '''
+      mv $ddac_repo/$ddac_tarball .
 
-
-      file=`date +'%Y-%m-%d-%HH%MM%SS'`
-      echo time > $file
-      gsutil cp $file gs://$deployment_bucket/      
+      # Deploy DDAC
+      cluster_name=''' + cluster_name + '''
+      dc_name=''' + dc_name + '''
+      seeds=''' + seeds + '''
+      ./$ddac_repo/deploy-dse.sh $cluster_name $dc_name $seeds
+      
+      #file=`date +'%Y-%m-%d-%HH%MM%SS'`
+      #echo time > $file
+      #gsutil cp $file gs://$deployment_bucket/      
       popd
 
       '''
 
   dev_ops_script = '''
       #!/usr/bin/env bash
+
+      # Install Java
+      echo "Performing package OpenJDK install"
+      # check for lock
+      echo -e "Checking if apt/dpkg running, start: $(date +%r)"
+      while ps -A | grep -e apt -e dpkg >/dev/null 2>&1; do sleep 10s; done;
+      echo -e "No other procs: $(date +%r)"
+      apt-get -y update
+      apt-get -y install openjdk-8-jdk
 
       pushd ~ubuntu
       deployment_bucket=''' + deployment_bucket + '''
@@ -174,6 +271,30 @@ def GenerateConfig(context):
           }
       },
       {
+          'name': ddac_fw,
+          'type': 'compute.v1.firewalls',
+          'properties': {
+                'name': ddac_fw,
+                'description': 'firewall rule for DDAC cluster',
+                'network': network,
+                'sourceRanges': ["0.0.0.0/0"],
+                'allowed': [{
+                       'IPProtocol': 'TCP',
+                       'ports': ["0-65535"]
+	            },
+                    {
+                       'IPProtocol': 'UDP',
+                       'ports': ["0-65535"]
+                    }],
+                'metadata': {
+                    'dependsOn': [
+                       deployment_bucket,
+                    ]
+                }
+          }
+
+      },
+      {
           # Create the Instance Template
           'name': dse_seed_0_it,
           'type': 'compute.v1.instanceTemplate',
@@ -196,9 +317,7 @@ def GenerateConfig(context):
                       'autoDelete': True, 
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824', 
-                          'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824'
                       }
                     }, 
 		    {
@@ -207,8 +326,8 @@ def GenerateConfig(context):
                       'boot': False,
                       'autoDelete': True,
                       'initializeParams': {
-                          'diskType': 'pd-standard',
-                          'diskSizeGb':'20' 
+                          'diskType': context.properties['dataDiskType'],
+                          'diskSizeGb': context.properties['diskSize']
                       }
                     }
                   ],
@@ -251,9 +370,7 @@ def GenerateConfig(context):
                       'autoDelete': True,
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824',
-                          'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824'
                       }
                     },
                     {
@@ -262,8 +379,8 @@ def GenerateConfig(context):
                       'boot': False,
                       'autoDelete': True,
                       'initializeParams': {
-                          'diskType': 'pd-standard',
-                          'diskSizeGb':'20'
+                          'diskType': context.properties['dataDiskType'],
+                          'diskSizeGb': context.properties['diskSize']
                       }
                     }
                   ],
@@ -306,9 +423,7 @@ def GenerateConfig(context):
                       'autoDelete': True,
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824',
-                          'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824'
                       }
                     },
                     {
@@ -317,8 +432,8 @@ def GenerateConfig(context):
                       'boot': False,
                       'autoDelete': True,
                       'initializeParams': {
-                          'diskType': 'pd-standard',
-                          'diskSizeGb':'20'
+                          'diskType': context.properties['dataDiskType'],
+                          'diskSizeGb': context.properties['diskSize']
                       }
                     }
                   ],
@@ -361,9 +476,7 @@ def GenerateConfig(context):
                       'autoDelete': True, 
                       'initializeParams': {
                           'sourceImage':
-                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824',
-                          'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                            URL_BASE + 'datastax-public/global/images/datastax-enterprise-ubuntu-1604-xenial-v20180824'
                       }
                     },
                     { 
@@ -372,8 +485,8 @@ def GenerateConfig(context):
                       'boot': False,
                       'autoDelete': True, 
                       'initializeParams': {
-                          'diskType': 'pd-standard',
-                          'diskSizeGb':'20'
+                          'diskType': context.properties['dataDiskType'],
+                          'diskSizeGb': context.properties['diskSize']
                       }
                     }
                   ],
