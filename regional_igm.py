@@ -39,9 +39,11 @@ def GenerateConfig(context):
 
   # GCP subnet
   region = context.properties['region']
-  cidr = context.properties['subnetCIDR']
+  # Hardcode DDAC subnet's CIDR to 10.8.0.0/16
+  cidr = '10.8.0.0/16'
   dse_subnet = deployment + '-dse-subnet-' + region
-  network = URL_BASE + context.env['project'] + '/global/networks/' + context.properties['network']
+  ddac_network_name = context.properties['network']
+  ddac_network = URL_BASE + context.env['project'] + '/global/networks/' + ddac_network_name
   
   # DDAC firewall
   ddac_fw = deployment + '-ddac-fw'  
@@ -101,7 +103,6 @@ def GenerateConfig(context):
       echo seed_0 > seed_0
       gsutil cp ./seed_0 gs://$deployment_bucket/
       popd
-
       '''
 
   dse_seed_1_script = '''
@@ -148,22 +149,19 @@ def GenerateConfig(context):
       gsutil cp ./seed_1 gs://$deployment_bucket/
 
       # Wait until all DSE nodes are up and have joined the cluster:
-      #cluster_size=''' + cluster_size + '''
-      #size=`nodetool status | grep -o 'UN' | wc -l`
-      #while [ $size -lt $cluster_size ]; do
-      #    echo The Current DSE cluster size is $size
-      #    echo Keep looping until the DSE cluster size reaches $cluster_size
-      #    sleep 10s
-      #    size=`nodetool status | grep -o 'UN' | wc -l`
-      #done
+      cluster_size=''' + cluster_size + '''
+      size=`/usr/share/dse/bin/nodetool status | grep -o 'UN' | wc -l`
+      while [ $size -lt $cluster_size ]; do
+          echo The Current DSE cluster size is $size
+          echo Keep looping until the DSE cluster size reaches $cluster_size
+          sleep 10s
+          size=`/usr/share/dse/bin/nodetool status | grep -o 'UN' | wc -l`
+      done
 
-      # To Do:
-      # Once all up and joined the cluster, do the following:
-      # echo dev_ops > dev_ops
-      # gsutil cp ./dev_ops gs://$deployment_bucket/
-
+      # Once all up and joined the cluster, ready to start dev ops vm install
+      echo dev_ops > dev_ops
+      gsutil cp ./dev_ops gs://$deployment_bucket/
       popd
-       
       '''
 
   dse_non_seed_script = '''
@@ -205,12 +203,7 @@ def GenerateConfig(context):
       dc_name=''' + dc_name + '''
       seeds=''' + seeds + '''
       ./$ddac_repo/deploy-dse.sh $cluster_name $dc_name $seeds
-      
-      #file=`date +'%Y-%m-%d-%HH%MM%SS'`
-      #echo time > $file
-      #gsutil cp $file gs://$deployment_bucket/      
       popd
-
       '''
 
   dev_ops_script = '''
@@ -228,19 +221,18 @@ def GenerateConfig(context):
       pushd ~ubuntu
       deployment_bucket=''' + deployment_bucket + '''
 
-      #gsutil cp gs://$deployment_bucket/dev_ops .
-      #while [ $? -ne 0 ]
-      #do
-      #    sleep 10s
-      #    gsutil cp gs://$deployment_bucket/dev_ops .
-      #done
+      gsutil cp gs://$deployment_bucket/dev_ops .
+      while [ $? -ne 0 ]
+      do
+          sleep 10s
+          gsutil cp gs://$deployment_bucket/dev_ops .
+      done
 
       # install and configure the dev ops vm below
-
+      echo install Dev Ops VM software components
+      sleep 120
       gsutil rm gs://$deployment_bucket/*
-
       popd
-
       '''
  
   # Create a dictionary which represents the resources
@@ -260,14 +252,28 @@ def GenerateConfig(context):
         }
       },
       {
+          'name': ddac_network_name,
+          'type': 'compute.v1.network',
+          'properties': {
+                'name': ddac_network_name,
+                'description': 'VPC network for DDAC cluster deployment',
+                'autoCreateSubnetworks': False,
+          }
+      },
+      {
           'name': dse_subnet,
           'type': 'compute.v1.subnetwork',
           'properties': {
                 'name': dse_subnet,
-                'description': 'Subnetwork of %s in %s' % (network, dse_subnet),
+                'description': 'Subnetwork of %s in %s' % (ddac_network_name, dse_subnet),
                 'ipCidrRange': cidr,
                 'region': region,
-                'network': network
+                'network': ddac_network,
+          },
+          'metadata': {
+                'dependsOn': [
+                     ddac_network_name,
+                ]
           }
       },
       {
@@ -276,7 +282,7 @@ def GenerateConfig(context):
           'properties': {
                 'name': ddac_fw,
                 'description': 'firewall rule for DDAC cluster',
-                'network': network,
+                'network': ddac_network,
                 'sourceRanges': ["0.0.0.0/0"],
                 'allowed': [{
                        'IPProtocol': 'TCP',
@@ -285,14 +291,13 @@ def GenerateConfig(context):
                     {
                        'IPProtocol': 'UDP',
                        'ports': ["0-65535"]
-                    }],
-                'metadata': {
-                    'dependsOn': [
-                       deployment_bucket,
-                    ]
-                }
+                    }]
+          },
+          'metadata': {
+                'dependsOn': [
+                    ddac_network_name,
+                ]
           }
-
       },
       {
           # Create the Instance Template
@@ -303,7 +308,7 @@ def GenerateConfig(context):
                   'machineType':
                       context.properties['machineType'],
                   'networkInterfaces': [{
-                      'network': network,
+                      'network': ddac_network,
                       'subnetwork': '$(ref.%s.selfLink)' % dse_subnet,
                       'accessConfigs': [{
                           'name': 'External NAT',
@@ -327,7 +332,7 @@ def GenerateConfig(context):
                       'autoDelete': True,
                       'initializeParams': {
                           'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                          'diskSizeGb': context.properties['dataDiskSize']
                       }
                     }
                   ],
@@ -356,7 +361,7 @@ def GenerateConfig(context):
                   'machineType':
                       context.properties['machineType'],
                   'networkInterfaces': [{
-                      'network': network,
+                      'network': ddac_network,
                       'subnetwork': '$(ref.%s.selfLink)' % dse_subnet,
                       'accessConfigs': [{
                           'name': 'External NAT',
@@ -380,7 +385,7 @@ def GenerateConfig(context):
                       'autoDelete': True,
                       'initializeParams': {
                           'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                          'diskSizeGb': context.properties['dataDiskSize']
                       }
                     }
                   ],
@@ -409,7 +414,7 @@ def GenerateConfig(context):
                   'machineType':
                       context.properties['machineType'],
                   'networkInterfaces': [{
-                      'network': network,
+                      'network': ddac_network,
                       'subnetwork': '$(ref.%s.selfLink)' % dse_subnet,
                       'accessConfigs': [{
                           'name': 'External NAT',
@@ -433,7 +438,7 @@ def GenerateConfig(context):
                       'autoDelete': True,
                       'initializeParams': {
                           'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                          'diskSizeGb': context.properties['dataDiskSize']
                       }
                     }
                   ],
@@ -462,7 +467,7 @@ def GenerateConfig(context):
                   'machineType':
                       context.properties['machineType'],
                   'networkInterfaces': [{
-                      'network': network,
+                      'network': ddac_network,
                       'subnetwork': '$(ref.%s.selfLink)' % dse_subnet,
                       'accessConfigs': [{
                           'name': 'External NAT',
@@ -486,7 +491,7 @@ def GenerateConfig(context):
                       'autoDelete': True, 
                       'initializeParams': {
                           'diskType': context.properties['dataDiskType'],
-                          'diskSizeGb': context.properties['diskSize']
+                          'diskSizeGb': context.properties['dataDiskSize']
                       }
                     }
                   ],
